@@ -1,0 +1,54 @@
+name: Build WindowsiOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Inspect Repo and Build
+        run: |
+          echo "=== REPO FILES ==="
+          ls -la
+          echo "=== RAM SETTINGS SEARCH ==="
+          grep -rnE "4096|4500|4608|ram|memory|MB|GB" ios/ src/ core/ 2>/dev/null | head -n 30 || true
+          cd ios
+          if [ -f "project.yml" ]; then
+            brew install xcodegen
+            xcodegen generate
+          fi
+          PROJ=$(find . -maxdepth 2 -name "*.xcodeproj" | head -n 1)
+          SCHEME=$(xcodebuild -list -project "$PROJ" | awk '/Schemes:/{getline; print $1; exit}')
+          set -o pipefail
+          xcodebuild -project "$PROJ" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" 2>&1 | tee build.log || {
+              echo "=== ERROR SUMMARY ==="
+              grep -E "error:|fatal error:|Undefined symbols|ld:" build.log | tail -n 20
+              exit 1
+            }
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find ios/build -name "*.app" | head -n 1)
+          cp -r "$APP_PATH" Payload/
+          zip -r WindowsiOS.ipa Payload
+
+      - name: Upload WindowsiOS IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindowsiOS-IPA
+          path: WindowsiOS.ipa
