@@ -10,26 +10,53 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
-
-      - name: Build Unsigned App
+      - name: Check repository structure and Build
         run: |
-          PROJECT_FILE=$(find . -maxdepth 2 -name "*.xcodeproj" | head -n 1)
-          SCHEME_NAME=$(xcodebuild -list -project "$PROJECT_FILE" | awk '/Schemes:/{getline; print $1}')
-          xcodebuild -project "$PROJECT_FILE" \
-            -scheme "$SCHEME_NAME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+          echo "=== Files in repository ==="
+          find . -maxdepth 3
+          
+          PROJECT_FILE=$(find . -name "*.xcodeproj" | head -n 1)
+          WORKSPACE_FILE=$(find . -name "*.xcworkspace" | grep -v "project.xcworkspace" | head -n 1)
+          
+          if [ -n "$WORKSPACE_FILE" ]; then
+            echo "Found workspace: $WORKSPACE_FILE"
+            SCHEME_NAME=$(xcodebuild -list -workspace "$WORKSPACE_FILE" | awk '/Schemes:/{getline; print $1}')
+            xcodebuild -workspace "$WORKSPACE_FILE" \
+              -scheme "$SCHEME_NAME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=""
+          elif [ -n "$PROJECT_FILE" ]; then
+            echo "Found project: $PROJECT_FILE"
+            SCHEME_NAME=$(xcodebuild -list -project "$PROJECT_FILE" | awk '/Schemes:/{getline; print $1}')
+            xcodebuild -project "$PROJECT_FILE" \
+              -scheme "$SCHEME_NAME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=""
+          else
+            echo "No xcodeproj found. Trying Swift Package / xcodebuild directly..."
+            SCHEME_NAME=$(xcodebuild -list | awk '/Schemes:/{getline; print $1}')
+            xcodebuild -scheme "$SCHEME_NAME" \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=""
+          fi
 
       - name: Package IPA
         run: |
           mkdir -p Payload
-          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
+          APP_PATH=$(find build -name "*.app" | head -n 1)
+          echo "Found app: $APP_PATH"
           cp -r "$APP_PATH" Payload/
           zip -r WindowsiOS.ipa Payload
 
