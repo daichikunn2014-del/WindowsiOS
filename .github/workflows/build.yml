@@ -10,14 +10,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inspect files and Generate Xcode Project
+      - name: Inspect ios folder and Build
         run: |
-          echo "=== Repository Files ==="
+          echo "=== Files in repository ==="
           find . -maxdepth 4 -not -path '*/.*'
-          
+
+          # もし ios/Package.swift や ios/*.xcodeproj があればそれを使う
+          if [ -f "ios/Package.swift" ]; then
+            echo "Found ios/Package.swift"
+          fi
+
+          # Bridging Header を自動検索
+          BRIDGING_HEADER=$(find . -name "*Bridging-Header.h" -o -name "WinIOSBridge.h" | head -n 1)
+          echo "Found header: $BRIDGING_HEADER"
+
           brew install xcodegen
-          
-          cat << 'EOF' > project.yml
+
+          cat << EOF > project.yml
           name: WindowsiOS
           options:
             bundleIdPrefix: com.windowsios
@@ -27,15 +36,7 @@ jobs:
               platform: iOS
               deploymentTarget: "17.0"
               sources:
-                - path: .
-                  excludes:
-                    - "**/*.md"
-                    - "**/*.txt"
-                    - "**/*.sh"
-                    - "**/*.py"
-                    - "**/*.yml"
-                    - "**/*.yaml"
-                    - "LICENSE*"
+                - path: ios/Sources
               settings:
                 base:
                   PRODUCT_BUNDLE_IDENTIFIER: com.windowsios.app
@@ -43,15 +44,15 @@ jobs:
                   INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
                   INFOPLIST_KEY_UILaunchScreen_Generation: YES
                   INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait"
+                  SWIFT_OBJC_BRIDGING_HEADER: "$BRIDGING_HEADER"
+                  HEADER_SEARCH_PATHS: "\$(inherited) \$(SRCROOT)/ios/Sources \$(SRCROOT)/ios/Sources/include \$(SRCROOT)/src \$(SRCROOT)/include"
                   CODE_SIGNING_ALLOWED: NO
                   CODE_SIGNING_REQUIRED: NO
                   CODE_SIGN_IDENTITY: ""
           EOF
-          
+
           xcodegen generate
 
-      - name: Build Unsigned App
-        run: |
           xcodebuild -project WindowsiOS.xcodeproj \
             -scheme WindowsiOS \
             -configuration Release \
