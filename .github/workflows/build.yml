@@ -10,53 +10,61 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check repository structure and Build
+      - name: Inspect files and Generate Xcode Project
         run: |
-          echo "=== Files in repository ==="
-          find . -maxdepth 3
+          echo "=== Repository Files ==="
+          find . -maxdepth 4 -not -path '*/.*'
           
-          PROJECT_FILE=$(find . -name "*.xcodeproj" | head -n 1)
-          WORKSPACE_FILE=$(find . -name "*.xcworkspace" | grep -v "project.xcworkspace" | head -n 1)
+          brew install xcodegen
           
-          if [ -n "$WORKSPACE_FILE" ]; then
-            echo "Found workspace: $WORKSPACE_FILE"
-            SCHEME_NAME=$(xcodebuild -list -workspace "$WORKSPACE_FILE" | awk '/Schemes:/{getline; print $1}')
-            xcodebuild -workspace "$WORKSPACE_FILE" \
-              -scheme "$SCHEME_NAME" \
-              -configuration Release \
-              -sdk iphoneos \
-              -derivedDataPath build \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY=""
-          elif [ -n "$PROJECT_FILE" ]; then
-            echo "Found project: $PROJECT_FILE"
-            SCHEME_NAME=$(xcodebuild -list -project "$PROJECT_FILE" | awk '/Schemes:/{getline; print $1}')
-            xcodebuild -project "$PROJECT_FILE" \
-              -scheme "$SCHEME_NAME" \
-              -configuration Release \
-              -sdk iphoneos \
-              -derivedDataPath build \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY=""
-          else
-            echo "No xcodeproj found. Trying Swift Package / xcodebuild directly..."
-            SCHEME_NAME=$(xcodebuild -list | awk '/Schemes:/{getline; print $1}')
-            xcodebuild -scheme "$SCHEME_NAME" \
-              -configuration Release \
-              -destination 'generic/platform=iOS' \
-              -derivedDataPath build \
-              CODE_SIGNING_ALLOWED=NO \
-              CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY=""
-          fi
+          cat << 'EOF' > project.yml
+          name: WindowsiOS
+          options:
+            bundleIdPrefix: com.windowsios
+          targets:
+            WindowsiOS:
+              type: application
+              platform: iOS
+              deploymentTarget: "17.0"
+              sources:
+                - path: .
+                  excludes:
+                    - "**/*.md"
+                    - "**/*.txt"
+                    - "**/*.sh"
+                    - "**/*.py"
+                    - "**/*.yml"
+                    - "**/*.yaml"
+                    - "LICENSE*"
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.windowsios.app
+                  GENERATE_INFOPLIST_FILE: YES
+                  INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+                  INFOPLIST_KEY_UILaunchScreen_Generation: YES
+                  INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait"
+                  CODE_SIGNING_ALLOWED: NO
+                  CODE_SIGNING_REQUIRED: NO
+                  CODE_SIGN_IDENTITY: ""
+          EOF
+          
+          xcodegen generate
+
+      - name: Build Unsigned App
+        run: |
+          xcodebuild -project WindowsiOS.xcodeproj \
+            -scheme WindowsiOS \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
 
       - name: Package IPA
         run: |
           mkdir -p Payload
           APP_PATH=$(find build -name "*.app" | head -n 1)
-          echo "Found app: $APP_PATH"
           cp -r "$APP_PATH" Payload/
           zip -r WindowsiOS.ipa Payload
 
